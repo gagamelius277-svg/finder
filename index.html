@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Typo-Domain Finder</title>
+<style>
+:root{--bg:#0e1116;--card:#161b22;--bd:#2a313c;--tx:#e6edf3;--mu:#8b949e;--ac:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149}
+@media (prefers-color-scheme:light){:root{--bg:#f6f8fa;--card:#fff;--bd:#d0d7de;--tx:#1f2328;--mu:#656d76;--ac:#0969da;--ok:#1a7f37;--warn:#9a6700;--bad:#cf222e}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,sans-serif;padding:24px}
+main{max-width:1100px;margin:auto}h1{margin:0 0 4px;font-size:24px}p.sub{color:var(--mu);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px;margin-bottom:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input[type=text]{flex:1;min-width:220px;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font-size:15px}
+button{padding:10px 16px;border-radius:8px;border:1px solid var(--bd);background:var(--ac);color:#fff;font-weight:600;cursor:pointer}
+button.sec{background:transparent;color:var(--tx)}button:disabled{opacity:.5;cursor:default}
+label.opt{display:flex;gap:6px;align-items:center;color:var(--mu);font-size:14px}
+.bar{height:6px;background:var(--bd);border-radius:3px;overflow:hidden;margin-top:12px}.bar>div{height:100%;width:0;background:var(--ac);transition:width .2s}
+.stat{color:var(--mu);font-size:13px;margin-top:6px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
+th{color:var(--mu);font-weight:600;font-size:12px;text-transform:uppercase;cursor:default}
+td.d{font-family:ui-monospace,monospace;word-break:break-all}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;border:1px solid var(--bd);color:var(--mu);margin:0 4px 2px 0}
+.tag.ok{color:var(--ok);border-color:var(--ok)}.tag.warn{color:var(--warn);border-color:var(--warn)}.tag.bad{color:var(--bad);border-color:var(--bad)}
+tr.hot td.d{color:var(--bad);font-weight:600}
+td a{color:var(--ac);text-decoration:none;margin-right:8px;font-size:13px}td a:hover{text-decoration:underline}
+.note{color:var(--mu);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+<h1>Typo-Domain Finder</h1>
+<p class="sub">Generiert Tippfehler-/Lookalike-Domains einer Marke und prüft per DNS-over-HTTPS (Cloudflare/Google), welche existieren. Läuft komplett im Browser.</p>
+
+<div class="card">
+  <div class="row">
+    <input id="q" type="text" placeholder="Marke oder Domain, z. B. facebook oder facebook.com" value="facebook.com" autocomplete="off">
+    <button id="go">Suchen</button>
+    <button id="stop" class="sec" disabled>Stopp</button>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <label class="opt"><input type="checkbox" id="oA" checked> Typos × Original-TLD</label>
+    <label class="opt"><input type="checkbox" id="oB" checked> Marke × andere TLDs</label>
+    <label class="opt"><input type="checkbox" id="oC" checked> Marke/Keywords × Hosting (vercel.app, github.io …)</label>
+    <label class="opt"><input type="checkbox" id="oD"> Typos × Hosting (viele Anfragen)</label>
+  </div>
+  <div class="bar"><div id="prog"></div></div>
+  <div class="stat" id="stat">Bereit.</div>
+</div>
+
+<div class="card">
+  <div class="row" style="margin-bottom:10px">
+    <label class="opt"><input type="checkbox" id="fAll"> Auch nicht registrierte / Wildcard anzeigen</label>
+    <label class="opt"><input type="checkbox" id="fHot"> Nur Interessante</label>
+    <button class="sec" id="csv" style="margin-left:auto">CSV</button>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr><th>Domain</th><th>Typ</th><th>Status</th><th>Details</th><th>Prüfen</th></tr></thead>
+    <tbody id="out"><tr><td colspan="5" class="note">Noch keine Ergebnisse.</td></tr></tbody>
+  </table></div>
+  <p class="note">„Interessant“ = aktive A-Records, MX-Einträge (Mail-fähig), Keyword-/Lookalike-Muster. Hosting-Domains mit Wildcard-DNS (z. B. *.vercel.app) lassen sich per DNS nicht verifizieren – dafür die Links zu urlscan/VirusTotal nutzen. Verdächtige Seiten nicht direkt im Hauptbrowser öffnen.</p>
+</div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const KB = {q:'wa',w:'qesad',e:'wrsdf',r:'etdfg',t:'ryfgh',y:'tughj',u:'yihjk',i:'uojkl',o:'ipkl',p:'ol',a:'qwsz',s:'qweadzx',d:'wersfxc',f:'ertdgcv',g:'rtyfhvb',h:'tyugjbn',j:'yuihknm',k:'uiojlm',l:'iopk',z:'asx',x:'zsdc',c:'xdfv',v:'cfgb',b:'vghn',n:'bhjm',m:'njk'};
+const HG = [['o','0'],['l','1'],['l','i'],['i','l'],['i','1'],['e','3'],['a','4'],['s','5'],['m','rn'],['w','vv'],['d','cl'],['rn','m'],['vv','w'],['cl','d'],['g','q'],['u','v'],['b','d']];
+const KW = ['login','secure','support','help','account','verify','official','app','online','services','web','mail','pay','free','security','id','service'];
+const TLDS = ['com','net','org','co','io','app','xyz','info','biz','online','site','top','shop','store','de','at','ch','uk','us','eu','me','cc','tv','ru','cn'];
+const PLAT = ['vercel.app','netlify.app','github.io','pages.dev','workers.dev','herokuapp.com','web.app','firebaseapp.com','onrender.com','up.railway.app','glitch.me','replit.app','repl.co','fly.dev','surge.sh','000webhostapp.com','weebly.com','blogspot.com','wordpress.com','carrd.co','webflow.io'];
+const VOW = 'aeiou';
+const VALID = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+
+function typos(l) {
+  const m = new Map();
+  const add = (s, t) => { if (s && s !== l && s.length <= 63 && VALID.test(s) && !m.has(s)) m.set(s, t); };
+  for (let i = 0; i < l.length; i++) {
+    add(l.slice(0, i) + l.slice(i + 1), 'Auslassung');
+    add(l.slice(0, i) + l[i] + l.slice(i), 'Doppelt');
+    if (i < l.length - 1) add(l.slice(0, i) + l[i + 1] + l[i] + l.slice(i + 2), 'Vertauscht');
+    for (const c of (KB[l[i]] || '')) {
+      add(l.slice(0, i) + c + l.slice(i + 1), 'Tastatur');
+      add(l.slice(0, i) + c + l.slice(i), 'Einfügung');
+      add(l.slice(0, i + 1) + c + l.slice(i + 1), 'Einfügung');
+    }
+    if (VOW.includes(l[i])) for (const v of VOW) add(l.slice(0, i) + v + l.slice(i + 1), 'Vokal');
+    if (i > 0) add(l.slice(0, i) + '-' + l.slice(i), 'Bindestrich');
+  }
+  for (const [f, t] of HG) {
+    let idx = -1;
+    while ((idx = l.indexOf(f, idx + 1)) !== -1) add(l.slice(0, idx) + t + l.slice(idx + f.length), 'Lookalike');
+  }
+  return m;
+}
+function keywords(l) {
+  const m = new Map();
+  for (const k of KW) for (const s of [l + k, l + '-' + k, k + l, k + '-' + l]) if (VALID.test(s)) m.set(s, 'Keyword');
+  return m;
+}
+function parse(v) {
+  v = v.trim().toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/^www\./, '').split(/[\/?#:]/)[0];
+  const p = v.split('.').filter(Boolean);
+  if (!p.length) return null;
+  if (p.length === 1) return { label: p[0], tld: 'com' };
+  let n = 1;
+  if (p.length > 2 && p[p.length - 1].length === 2 && p[p.length - 2].length <= 3) n = 2;
+  return { label: p[p.length - n - 1], tld: p.slice(-n).join('.') };
+}
+
+async function doh(name, type) {
+  const urls = [
+    `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`,
+    `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`
+  ];
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { headers: { accept: 'application/dns-json' } });
+      if (r.ok) return await r.json();
+    } catch (e) {}
+  }
+  return null;
+}
+
+let results = [], running = false, stopFlag = false, wild = new Set();
+
+async function check(item) {
+  const j = await doh(item.domain, 'A');
+  if (!j) { item.status = 'error'; return; }
+  if (j.Status === 3) { item.status = 'free'; return; }
+  const ans = j.Answer || [];
+  item.ips = ans.filter(a => a.type === 1).map(a => a.data);
+  item.cname = (ans.find(a => a.type === 5) || {}).data;
+  item.status = item.ips.length ? 'active' : 'registered';
+  if (j.Status !== 0) item.note = 'DNS-Fehler (' + j.Status + ')';
+  const mx = await doh(item.domain, 'MX');
+  item.mx = !!(mx && (mx.Answer || []).some(a => a.type === 15 && !/^0?\s*\.?$/.test(a.data.replace(/^\d+\s*/, ''))));
+  const suf = item.plat;
+  if (suf && wild.has(suf) && item.status !== 'free') { item.status = 'wildcard'; }
+}
+
+function score(r) {
+  let s = 0;
+  if (r.status === 'active') s += 3; else if (r.status === 'registered') s += 1;
+  if (r.mx) s += 2;
+  if (['Keyword', 'Lookalike'].includes(r.type) && s > 0) s += 1;
+  if (r.plat && r.status === 'active') s += 1;
+  return s;
+}
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+let rafPending = false;
+function render() {
+  if (rafPending) return; rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    const all = $('fAll').checked, hot = $('fHot').checked;
+    let rows = results.filter(r => r.status && r.status !== 'error');
+    rows = rows.filter(r => all || ['active', 'registered'].includes(r.status));
+    rows.forEach(r => r.score = score(r));
+    if (hot) rows = rows.filter(r => r.score >= 4);
+    rows.sort((a, b) => b.score - a.score || a.domain.localeCompare(b.domain));
+    const shown = rows.slice(0, 600);
+    $('out').innerHTML = shown.length ? shown.map(r => {
+      const st = { active: '<span class="tag ok">aktiv</span>', registered: '<span class="tag warn">registriert</span>', wildcard: '<span class="tag">Wildcard</span>', free: '<span class="tag">frei</span>' }[r.status] || '';
+      const det = [(r.ips || []).slice(0, 3).join(', '), r.cname ? 'CNAME ' + r.cname : '', r.mx ? '<span class="tag bad">MX</span>' : '', r.note || ''].filter(Boolean).join(' ');
+      const d = encodeURIComponent(r.domain);
+      return `<tr class="${r.score >= 4 ? 'hot' : ''}"><td class="d">${esc(r.domain)}</td><td><span class="tag">${esc(r.type)}</span></td><td>${st}</td><td>${det}</td>
+      <td><a href="https://urlscan.io/search/#${d}" target="_blank" rel="noopener noreferrer">urlscan</a><a href="https://www.virustotal.com/gui/domain/${d}" target="_blank" rel="noopener noreferrer">VT</a><a href="https://crt.sh/?q=${d}" target="_blank" rel="noopener noreferrer">crt.sh</a><a href="https://who.is/whois/${d}" target="_blank" rel="noopener noreferrer">whois</a></td></tr>`;
+    }).join('') + (rows.length > shown.length ? `<tr><td colspan="5" class="note">… ${rows.length - shown.length} weitere (Filter nutzen oder CSV exportieren)</td></tr>` : '')
+      : '<tr><td colspan="5" class="note">Keine Treffer.</td></tr>';
+  });
+}
+
+function build(p) {
+  const list = new Map();
+  const put = (domain, type, plat) => { if (!list.has(domain)) list.set(domain, { domain, type, plat }); };
+  const T = typos(p.label), K = keywords(p.label);
+  if ($('oA').checked) {
+    for (const [s, t] of T) put(s + '.' + p.tld, t);
+    for (const [s, t] of K) put(s + '.' + p.tld, t);
+  }
+  if ($('oB').checked) for (const t of TLDS) if (t !== p.tld) put(p.label + '.' + t, 'Andere TLD');
+  if ($('oC').checked) for (const pl of PLAT) {
+    put(p.label + '.' + pl, 'Hosting', pl);
+    for (const [s, t] of K) put(s + '.' + pl, t, pl);
+  }
+  if ($('oD').checked) for (const pl of PLAT) for (const [s, t] of T) put(s + '.' + pl, t, pl);
+  return [...list.values()];
+}
+
+async function run() {
+  const p = parse($('q').value);
+  if (!p || !VALID.test(p.label)) { $('stat').textContent = 'Ungültige Eingabe.'; return; }
+  results = build(p); wild = new Set();
+  if (!results.length) { $('stat').textContent = 'Nichts ausgewählt.'; return; }
+  running = true; stopFlag = false; $('go').disabled = true; $('stop').disabled = false;
+  $('out').innerHTML = '';
+  const plats = [...new Set(results.filter(r => r.plat).map(r => r.plat))];
+  $('stat').textContent = 'Wildcard-Erkennung …';
+  await Promise.all(plats.map(async pl => {
+    const j = await doh('zz-nx-' + Math.random().toString(36).slice(2, 10) + '.' + pl, 'A');
+    if (j && j.Status === 0 && (j.Answer || []).length) wild.add(pl);
+  }));
+  let done = 0, i = 0, found = 0;
+  const total = results.length;
+  const worker = async () => {
+    while (!stopFlag && i < total) {
+      const it = results[i++];
+      await check(it);
+      done++; if (['active', 'registered'].includes(it.status)) found++;
+      if (done % 5 === 0 || done === total) {
+        $('prog').style.width = (done / total * 100) + '%';
+        $('stat').textContent = `${done}/${total} geprüft · ${found} registriert/aktiv` + (wild.size ? ` · Wildcard: ${[...wild].join(', ')}` : '');
+        render();
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: 12 }, worker));
+  running = false; $('go').disabled = false; $('stop').disabled = true;
+  $('stat').textContent = (stopFlag ? 'Gestoppt. ' : 'Fertig. ') + `${done}/${total} geprüft · ${found} registriert/aktiv` + (wild.size ? ` · Wildcard: ${[...wild].join(', ')}` : '');
+  render();
+}
+
+$('go').onclick = run;
+$('q').onkeydown = e => { if (e.key === 'Enter' && !running) run(); };
+$('stop').onclick = () => { stopFlag = true; };
+$('fAll').onchange = $('fHot').onchange = render;
+$('csv').onclick = () => {
+  const rows = results.filter(r => ['active', 'registered'].includes(r.status));
+  const csv = 'domain,typ,status,ips,mx\n' + rows.map(r => [r.domain, r.type, r.status, (r.ips || []).join(' '), r.mx ? 1 : 0].join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'typo-domains.csv'; a.click();
+};
+</script>
+</body>
+</html>
